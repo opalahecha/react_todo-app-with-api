@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 import React, { useState } from 'react';
 import cn from 'classnames';
 import { Todo } from '../types/Todo';
