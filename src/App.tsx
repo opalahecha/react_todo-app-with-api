@@ -18,9 +18,35 @@ export const App: React.FC = () => {
   const [filter, setFilter] = useState<Filters>(Filters.All);
   const [tempTodo, setTempTodo] = useState<Todo | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAddingTodo, setIsAddingTodo] = useState(false);
+  const [editingTodoId, setEditingTodoId] = useState<number | null>(null);
   const newTodoFieldRef = useRef<HTMLInputElement>(null);
+  const editTodoFieldRef = useRef<HTMLInputElement>(null);
+
+  const focusNewTodoField = () => {
+    if (newTodoFieldRef.current) {
+      newTodoFieldRef.current.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (!isAddingTodo) {
+      focusNewTodoField();
+    }
+  }, [isAddingTodo]);
+
+  const focusEditTodoField = () => {
+    if (editTodoFieldRef.current) {
+      editTodoFieldRef.current.focus();
+    }
+  };
+
+  useEffect(() => {
+    if (errorMessage) {
+      focusEditTodoField();
+    }
+  }, [errorMessage]);
 
   const showErrorMessage = (message: string) => {
     setErrorMessage(message);
@@ -60,18 +86,6 @@ export const App: React.FC = () => {
     );
   }, [todos]);
 
-  const focusNewTodoField = () => {
-    if (newTodoFieldRef.current) {
-      newTodoFieldRef.current.focus();
-    }
-  };
-
-  useEffect(() => {
-    if (!isSubmitting) {
-      focusNewTodoField();
-    }
-  }, [isSubmitting]);
-
   const handleAddTodo = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const title = newTodoTitle.trim();
@@ -89,7 +103,7 @@ export const App: React.FC = () => {
       completed: false,
     });
 
-    setIsSubmitting(true);
+    setIsAddingTodo(true);
 
     try {
       const newTodo = await todoServices.postTodo(title);
@@ -103,7 +117,7 @@ export const App: React.FC = () => {
       showErrorMessage('Unable to add a todo');
     } finally {
       setTempTodo(null);
-      setIsSubmitting(false);
+      setIsAddingTodo(false);
       focusNewTodoField();
     }
   };
@@ -128,6 +142,41 @@ export const App: React.FC = () => {
       setErrorMessage('Unable to delete a todo');
     } finally {
       focusNewTodoField();
+    }
+  };
+
+  const handleEditTodo = async (todoId: number, newTitle: string) => {
+    if (editingTodoId === null || todoId !== editingTodoId) {
+      return;
+    }
+
+    const originalTodo = todos.find(todo => todo.id === todoId);
+
+    if (originalTodo && originalTodo.title.trim() === newTitle.trim()) {
+      setEditingTodoId(null);
+
+      return;
+    }
+
+    try {
+      setTodos(prevTodos =>
+        prevTodos.map(todo =>
+          todo.id === todoId ? { ...todo, isUpdating: true } : todo,
+        ),
+      );
+
+      const updatedTodo = await todoServices.updateTodo(todoId, {
+        title: newTitle.trim(),
+      });
+
+      setTodos(prevTodos =>
+        prevTodos.map(todo =>
+          todo.id === todoId ? { ...updatedTodo, isUpdating: false } : todo,
+        ),
+      );
+      setEditingTodoId(null);
+    } catch {
+      showErrorMessage('Unable to update the todo');
     }
   };
 
@@ -214,13 +263,14 @@ export const App: React.FC = () => {
           todo.id === todoId ? { ...updatedTodo, isUpdating: false } : todo,
         ),
       );
-    } catch {
+    } catch (error) {
       setTodos(prevTodos =>
         prevTodos.map(todo =>
           todo.id === todoId ? { ...todo, isUpdating: false } : todo,
         ),
       );
       showErrorMessage('Unable to update a todo');
+      throw error;
     }
   };
 
@@ -255,10 +305,9 @@ export const App: React.FC = () => {
               value={newTodoTitle}
               onChange={e => setNewTodoTitle(e.target.value)}
               ref={newTodoFieldRef}
-              disabled={isSubmitting}
+              disabled={isAddingTodo}
               id="new-todo-field"
               name="newTodoField"
-              autoFocus
             />
           </form>
         </header>
@@ -273,6 +322,9 @@ export const App: React.FC = () => {
                   onUpdate={handleToggleTodo}
                   isProcessed={todo.isDeleting || todo.isUpdating}
                   onError={showErrorMessage}
+                  editTodoFieldRef={editTodoFieldRef}
+                  focusEditTodoField={focusEditTodoField}
+                  handleEditTodo={handleEditTodo}
                 />
               </CSSTransition>
             ))}
@@ -283,7 +335,13 @@ export const App: React.FC = () => {
                 timeout={300}
                 classNames="temp-item"
               >
-                <TodoItem todo={tempTodo} isProcessed />
+                <TodoItem
+                  todo={tempTodo}
+                  isProcessed
+                  editTodoFieldRef={editTodoFieldRef}
+                  focusEditTodoField={focusEditTodoField}
+                  handleEditTodo={handleEditTodo}
+                />
               </CSSTransition>
             )}
           </TransitionGroup>

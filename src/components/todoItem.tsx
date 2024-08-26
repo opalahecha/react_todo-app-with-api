@@ -1,22 +1,27 @@
-/* eslint-disable no-console */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import cn from 'classnames';
 import { Todo } from '../types/Todo';
 
 interface Props {
   todo: Todo;
-  isProcessed?: boolean;
   onDelete?: (id: number) => void;
   onUpdate?: (todoId: number, data: Partial<Todo>) => void;
   onError?: (message: string) => void;
+  isProcessed?: boolean;
+  editTodoFieldRef: React.RefObject<HTMLInputElement>;
+  focusEditTodoField?: () => void;
+  handleEditTodo?: (todoId: number, newTitle: string) => void;
 }
 
 export const TodoItem: React.FC<Props> = ({
   todo,
-  isProcessed = false,
   onDelete,
   onUpdate,
   onError,
+  isProcessed = false,
+  editTodoFieldRef,
+  focusEditTodoField,
+  handleEditTodo,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(todo.title);
@@ -28,59 +33,107 @@ export const TodoItem: React.FC<Props> = ({
 
   const handleDoubleClick = () => {
     setIsEditing(true);
+    if (editTodoFieldRef.current) {
+      editTodoFieldRef.current.focus();
+    } else if (focusEditTodoField) {
+      focusEditTodoField();
+    }
   };
+
+  const clearFocus = React.useCallback(() => {
+    if (document.activeElement && editTodoFieldRef.current) {
+      (document.activeElement as HTMLElement).blur();
+    }
+  }, [editTodoFieldRef]);
+
+  useEffect(() => {
+    if (isEditing && editTodoFieldRef.current) {
+      editTodoFieldRef.current.focus();
+    } else {
+      clearFocus();
+    }
+  }, [isEditing, editTodoFieldRef, clearFocus]);
 
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setEditTitle(event.target.value);
   };
 
-  const handleDelete = () => {
-    if (todo.id) {
-      onDelete?.(todo.id);
+  const handleDelete = async () => {
+    if (isLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onDelete?.(todo.id);
+    } catch {
+      setIsLoading(false);
     }
   };
 
   const handleUpdate = async () => {
-    console.log('handleUpdate виклик');
-    console.log('Edit Title:', editTitle);
-
-    if (editTitle.trim()) {
-      if (isLoading) {
-        return;
-      }
-
-      setIsLoading(true);
-      try {
-        await onUpdate?.(todo.id, { title: editTitle.trim() });
-
-        setIsEditing(false);
-      } catch {
-        console.log('не оновлюється');
-        onError?.('Unable to update a todo');
-        setIsEditing(true);
-      } finally {
-        setIsLoading(false);
-      }
-    } else {
-      console.log('порожній тайтл');
+    if (editTitle.trim() === '') {
       onError?.('Title should not be empty');
       setEditTitle(todo.title);
-      handleDelete();
+      if (editTodoFieldRef.current) {
+        editTodoFieldRef.current.focus();
+      }
+
+      setIsLoading(false);
+
+      return;
+    }
+
+    if (isLoading) {
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await onUpdate?.(todo.id, { title: editTitle.trim() });
+      setIsEditing(false);
+    } catch {
+      onError?.('Unable to update a todo');
+      setEditTitle(todo.title);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const handleInputBlur = () => {
-    if (editTitle.trim()) {
-      handleUpdate();
-    }
-  };
-
-  const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleInputKeyDown = async (
+    event: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      handleUpdate();
+
+      if (editTitle.trim() === '') {
+        await handleDelete();
+      } else if (editTitle.trim() !== todo.title) {
+        await handleUpdate();
+        if (handleEditTodo) {
+          handleEditTodo(todo.id, editTitle);
+        }
+
+        if (editTodoFieldRef.current) {
+          editTodoFieldRef.current.blur();
+        }
+      } else {
+        setIsEditing(false);
+      }
     } else if (event.key === 'Escape') {
       setEditTitle(todo.title);
+      setIsEditing(false);
+    }
+  };
+
+  const handleBlur = async () => {
+    if (editTitle.trim() !== todo.title) {
+      if (editTitle.trim() === '') {
+        await handleDelete();
+      } else {
+        await handleUpdate();
+      }
+    } else {
       setIsEditing(false);
     }
   };
@@ -112,9 +165,9 @@ export const TodoItem: React.FC<Props> = ({
           placeholder="Empty todo will be deleted"
           value={editTitle}
           onChange={handleInputChange}
-          onBlur={handleInputBlur}
           onKeyDown={handleInputKeyDown}
-          autoFocus
+          onBlur={handleBlur}
+          ref={editTodoFieldRef}
         />
       ) : (
         <span data-cy="TodoTitle" className="todo__title">

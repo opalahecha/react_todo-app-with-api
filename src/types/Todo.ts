@@ -5,4 +5,5 @@ export interface Todo {
   completed: boolean;
   isDeleting?: boolean;
   isUpdating?: boolean;
+  isProcessed?: boolean;
 }
